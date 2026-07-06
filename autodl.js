@@ -8,7 +8,7 @@ module.exports = {
     aliases: ["dl", "download"],
     version: "1.0",
     author: "Mueid Mursalin Rifat",
-    countDown: 5,
+    countDown: 10,
     role: 0,
     shortDescription: { en: "📥 Auto download videos" },
     longDescription: { en: "Automatically detects and downloads videos from URLs in chat" },
@@ -19,106 +19,81 @@ module.exports = {
     }
   },
 
+  // This function runs when the command is called manually
   onStart: async function ({ api, event, args, message }) {
-    // This is for manual command usage
-    let url = null;
-    let quality = "best";
-    
-    // Check all arguments for URLs
-    const allText = args.join(" ");
-    const urlMatches = extractUrls(allText);
-    
-    if (urlMatches && urlMatches.length > 0) {
-      url = urlMatches[0];
-    }
-    
-    // If no URL found in args, check message reply
-    if (!url && event.messageReply) {
-      const replyText = event.messageReply.body || "";
-      const replyMatches = extractUrls(replyText);
-      if (replyMatches && replyMatches.length > 0) {
-        url = replyMatches[0];
-      }
-    }
-    
-    // Check for quality in args
-    if (args.length > 0) {
-      const lastArg = args[args.length - 1];
-      if (["best", "720", "480", "360"].includes(lastArg)) {
-        quality = lastArg;
-      }
-    }
-    
-    // If still no URL, show help
-    if (!url) {
-      return message.reply(
-        `📥 𝗔𝘂𝘁𝗼 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱𝗲𝗿\n━━━━━━━━━━━━━━━━━━━━\n` +
-        `💡 Just paste a video URL in chat!\n\n` +
-        `📌 Quality: best, 720, 480, 360\n` +
-        `📍 Example: ${this.config.name} https://youtube.com/watch?v=... 720\n\n` +
-        `📱 30+ Platforms Supported\n` +
-        `━━━━━━━━━━━━━━━━━━━━\n` +
-        `👨‍💻 Mueid Mursalin Rifat`
-      );
-    }
-
-    return processDownload(api, event, message, url, quality);
-  }
-};
-
-// Listen for messages with URLs (works with onEvent)
-module.exports.onEvent = async function ({ api, event, message }) {
-  try {
-    // Skip if message is from bot
-    if (event.senderID === api.getCurrentUserID()) return;
-    
-    // Check if message contains a URL
-    const text = event.body || "";
+    // Check if there's a URL in the message
+    const text = args.join(" ") || event.body || "";
     const urls = extractUrls(text);
     
     if (urls && urls.length > 0) {
-      // Check if URL is from a supported platform
       const url = urls[0];
-      const platform = detectPlatform(url);
-      
-      // Skip if not a supported platform
-      if (platform === "Unknown") return;
-      
-      // Check if this is a message to a group or user
-      const threadID = event.threadID;
-      
-      // Process download with quality detection
       let quality = "best";
       
-      // Check if quality is specified in the message
+      // Check if quality is specified
       const qualityMatch = text.match(/\b(best|720|480|360)\b/i);
       if (qualityMatch) {
         quality = qualityMatch[0].toLowerCase();
       }
       
-      // Process the download
-      await processDownload(api, event, message, url, quality);
+      return processDownload(api, event, message, url, quality);
     }
-  } catch (error) {
-    console.error("Auto-detect error:", error);
+    
+    // If no URL, show help
+    return message.reply(
+      `📥 𝗔𝘂𝘁𝗼 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱𝗲𝗿\n━━━━━━━━━━━━━━━━━━━━\n` +
+      `💡 Just paste a video URL in chat!\n\n` +
+      `📱 30+ Platforms Supported\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `👨‍💻 Mueid Mursalin Rifat`
+    );
+  },
+
+  // This function runs for EVERY message (auto-detect)
+  onEvent: async function ({ api, event, message }) {
+    try {
+      // Skip if message is from bot or empty
+      if (event.senderID === api.getCurrentUserID()) return;
+      if (!event.body) return;
+      
+      // Check if message contains a URL
+      const text = event.body;
+      const urls = extractUrls(text);
+      
+      if (urls && urls.length > 0) {
+        const url = urls[0];
+        const platform = detectPlatform(url);
+        
+        // Skip if not a supported platform
+        if (platform === "Unknown") return;
+        
+        // Check if quality is specified in the message
+        let quality = "best";
+        const qualityMatch = text.match(/\b(best|720|480|360)\b/i);
+        if (qualityMatch) {
+          quality = qualityMatch[0].toLowerCase();
+        }
+        
+        // Process the download
+        await processDownload(api, event, message, url, quality);
+      }
+    } catch (error) {
+      console.error("Auto-detect error:", error);
+    }
   }
 };
 
 // Main download processing function
 async function processDownload(api, event, message, url, quality) {
+  const threadID = event.threadID;
+  let waitMsg = null;
+  
   try {
-    // Check if downloading from this user is allowed (avoid spam)
-    const userId = event.senderID;
-    const threadID = event.threadID;
-    
     // Detect platform
     const platform = detectPlatform(url);
     
     // Send processing message
-    const waitMsg = await api.sendMessage(
-      `📥 Downloading video...\n` +
-      `📱 Platform: ${platform}\n` +
-      `📊 Quality: ${quality}`,
+    waitMsg = await api.sendMessage(
+      `📥 Downloading video...\n📱 Platform: ${platform}\n📊 Quality: ${quality}`,
       threadID
     );
 
@@ -134,7 +109,7 @@ async function processDownload(api, event, message, url, quality) {
     const data = response.data;
 
     if (!data.success) {
-      await api.unsendMessage(waitMsg.messageID);
+      if (waitMsg) await api.unsendMessage(waitMsg.messageID).catch(() => {});
       return api.sendMessage(
         `❌ Failed to download from ${platform}.\n💡 Make sure the URL is correct.`,
         threadID
@@ -149,7 +124,7 @@ async function processDownload(api, event, message, url, quality) {
     }
     
     if (!downloadUrl) {
-      await api.unsendMessage(waitMsg.messageID);
+      if (waitMsg) await api.unsendMessage(waitMsg.messageID).catch(() => {});
       return api.sendMessage("❌ No download URL found.", threadID);
     }
 
@@ -184,7 +159,7 @@ async function processDownload(api, event, message, url, quality) {
     });
 
     // Delete waiting message
-    await api.unsendMessage(waitMsg.messageID);
+    if (waitMsg) await api.unsendMessage(waitMsg.messageID).catch(() => {});
 
     // Get file size
     const stats = fs.statSync(tempPath);
@@ -227,9 +202,9 @@ async function processDownload(api, event, message, url, quality) {
   } catch (error) {
     console.error("Download error:", error);
     
-    try {
-      if (waitMsg) await api.unsendMessage(waitMsg.messageID);
-    } catch(e) {}
+    if (waitMsg) {
+      try { await api.unsendMessage(waitMsg.messageID); } catch(e) {}
+    }
     
     let errorMsg = `❌ 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗙𝗮𝗶𝗹𝗲𝗱\n━━━━━━━━━━━━━━━━━━━━\n`;
     
