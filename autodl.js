@@ -5,27 +5,22 @@ const path = require("path");
 module.exports = {
   config: {
     name: "autodl",
-    aliases: ["dl", "download"],
+    aliases: ["dl", "download", "saver", "get"],
     version: "1.0",
     author: "Mueid Mursalin Rifat",
-    countDown: 10,
+    countDown: 5,
     role: 0,
-    shortDescription: { en: "📥 Download videos from multiple platforms" },
-    longDescription: { en: "Auto-detect and download videos from YouTube, TikTok, Instagram, Facebook, Twitter, Reddit, and 30+ more platforms" },
+    shortDescription: { en: "📥 Auto download videos" },
+    longDescription: { en: "Automatically detects and downloads videos from URLs in chat" },
     category: "media",
     guide: {
-      en: "{pn} [URL] [quality]\n\n" +
-           "📌 Quality: best, 720, 480, 360 (default: best)\n\n" +
-           "📍 Examples:\n" +
-           "• {pn} https://youtube.com/watch?v=...\n" +
-           "• {pn} https://tiktok.com/@user/video/... 720\n" +
-           "• Reply to a message with {pn}\n\n" +
-           "📱 30+ Platforms Supported"
+      en: "Just paste a URL in chat!\n\n" +
+           "Supports: YouTube, TikTok, Instagram, Facebook, Twitter/X, Reddit, Vimeo, Dailymotion, Pinterest, Twitch, LinkedIn, Snapchat, Likee, ShareChat, Moj, Roposo, Chingari, Mitron, MxTakaTak, Triller, Kwai, Threads, Telegram, Discord, Rumble, BitChute, Odysee, LBRY, Kick, Trovo"
     }
   },
 
   onStart: async function ({ api, event, args, message }) {
-    // Auto detect URL from message
+    // This is for manual command usage
     let url = null;
     let quality = "best";
     
@@ -58,115 +53,152 @@ module.exports = {
     if (!url) {
       return message.reply(
         `📥 𝗔𝘂𝘁𝗼 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱𝗲𝗿\n━━━━━━━━━━━━━━━━━━━━\n` +
-        `📌 Usage: ${this.config.name} [URL] [quality]\n\n` +
-        `📝 Quality: best, 720, 480, 360\n\n` +
-        `📍 Examples:\n` +
-        `• ${this.config.name} https://youtube.com/watch?v=...\n` +
-        `• ${this.config.name} https://tiktok.com/@user/video/... 720\n` +
-        `• Reply to a message with ${this.config.name}\n` +
-        `━━━━━━━━━━━━━━━━━━━━\n` +
-        `📱 30+ Platforms Supported:\n` +
-        `YouTube, TikTok, Instagram, Facebook, Twitter/X, Reddit, Vimeo, Dailymotion, Pinterest, Twitch, LinkedIn, Snapchat, Likee, ShareChat, Moj, Roposo, Chingari, Mitron, MxTakaTak, Triller, Kwai, Threads, Telegram, Discord, Rumble, BitChute, Odysee, LBRY, Kick, Trovo\n` +
+        `💡 Just paste a video URL in chat!\n\n` +
+        `📌 Quality: best, 720, 480, 360\n` +
+        `📍 Example: ${this.config.name} https://youtube.com/watch?v=... 720\n\n` +
+        `📱 30+ Platforms Supported\n` +
         `━━━━━━━━━━━━━━━━━━━━\n` +
         `👨‍💻 Mueid Mursalin Rifat`
       );
     }
 
-    // Detect platform from URL
+    return processDownload(api, event, message, url, quality);
+  }
+};
+
+// Listen for messages with URLs (works with onEvent)
+module.exports.onEvent = async function ({ api, event, message }) {
+  try {
+    // Skip if message is from bot
+    if (event.senderID === api.getCurrentUserID()) return;
+    
+    // Check if message contains a URL
+    const text = event.body || "";
+    const urls = extractUrls(text);
+    
+    if (urls && urls.length > 0) {
+      // Check if URL is from a supported platform
+      const url = urls[0];
+      const platform = detectPlatform(url);
+      
+      // Skip if not a supported platform
+      if (platform === "Unknown") return;
+      
+      // Check if this is a message to a group or user
+      const threadID = event.threadID;
+      
+      // Process download with quality detection
+      let quality = "best";
+      
+      // Check if quality is specified in the message
+      const qualityMatch = text.match(/\b(best|720|480|360)\b/i);
+      if (qualityMatch) {
+        quality = qualityMatch[0].toLowerCase();
+      }
+      
+      // Process the download
+      await processDownload(api, event, message, url, quality);
+    }
+  } catch (error) {
+    console.error("Auto-detect error:", error);
+  }
+};
+
+// Main download processing function
+async function processDownload(api, event, message, url, quality) {
+  try {
+    // Check if downloading from this user is allowed (avoid spam)
+    const userId = event.senderID;
+    const threadID = event.threadID;
+    
+    // Detect platform
     const platform = detectPlatform(url);
+    
+    // Send processing message
+    const waitMsg = await api.sendMessage(
+      `📥 Downloading video...\n` +
+      `📱 Platform: ${platform}\n` +
+      `📊 Quality: ${quality}`,
+      threadID
+    );
 
-    try {
-      // Send processing message
-      const waitMsg = await message.reply(
-        `📥 Downloading...\n` +
-        `🔗 ${url}\n` +
-        `📱 Platform: ${platform}\n` +
-        `📊 Quality: ${quality}`
-      );
+    // Build API URL
+    let apiUrl = `https://shadowx-downloader.vercel.app/dl?url=${encodeURIComponent(url)}&key=shadowx`;
+    if (quality !== "best") {
+      apiUrl += `&quality=${quality}`;
+    }
 
-      // Build API URL
-      let apiUrl = `https://shadowx-downloader.vercel.app/dl?url=${encodeURIComponent(url)}&key=shadowx`;
-      if (quality !== "best") {
-        apiUrl += `&quality=${quality}`;
-      }
+    console.log("Downloading from:", apiUrl);
 
-      console.log("Downloading from:", apiUrl);
+    const response = await axios.get(apiUrl, { timeout: 30000 });
+    const data = response.data;
 
-      const response = await axios.get(apiUrl, { timeout: 30000 });
-      const data = response.data;
-
-      if (!data.success) {
-        await api.unsendMessage(waitMsg.messageID);
-        return message.reply(
-          `❌ 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗙𝗮𝗶𝗹𝗲𝗱\n━━━━━━━━━━━━━━━━━━━━\n` +
-          `⚠️ Could not download from this URL.\n\n` +
-          `💡 Make sure:\n` +
-          `• The URL is correct\n` +
-          `• The video is accessible\n` +
-          `• The platform is supported\n` +
-          `━━━━━━━━━━━━━━━━━━━━\n` +
-          `👨‍💻 Mueid Mursalin Rifat`
-        );
-      }
-
-      // Extract download URL
-      let downloadUrl = data.download?.url;
-      
-      if (downloadUrl && downloadUrl.startsWith("/")) {
-        downloadUrl = `https://shadowx-downloader.vercel.app${downloadUrl}`;
-      }
-      
-      if (!downloadUrl) {
-        await api.unsendMessage(waitMsg.messageID);
-        return message.reply("❌ No download URL found.");
-      }
-
-      console.log("Download URL:", downloadUrl);
-
-      // Get file extension
-      const filename = data.download?.filename || "video.mp4";
-      const ext = filename.includes(".mp4") ? "mp4" : 
-                  filename.includes(".mp3") ? "mp3" : 
-                  filename.includes(".mpg") ? "mpg" : "mp4";
-      
-      const tempPath = path.join(__dirname, `autodl_${Date.now()}.${ext}`);
-
-      // Download the file
-      const fileResponse = await axios({
-        method: 'GET',
-        url: downloadUrl,
-        responseType: 'stream',
-        timeout: 120000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
-
-      const writer = fs.createWriteStream(tempPath);
-      fileResponse.data.pipe(writer);
-
-      await new Promise((resolve, reject) => {
-        writer.on('finish', resolve);
-        writer.on('error', reject);
-        fileResponse.data.on('error', reject);
-      });
-
-      // Delete waiting message
+    if (!data.success) {
       await api.unsendMessage(waitMsg.messageID);
+      return api.sendMessage(
+        `❌ Failed to download from ${platform}.\n💡 Make sure the URL is correct.`,
+        threadID
+      );
+    }
 
-      // Get file size
-      const stats = fs.statSync(tempPath);
-      const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+    // Extract download URL
+    let downloadUrl = data.download?.url;
+    
+    if (downloadUrl && downloadUrl.startsWith("/")) {
+      downloadUrl = `https://shadowx-downloader.vercel.app${downloadUrl}`;
+    }
+    
+    if (!downloadUrl) {
+      await api.unsendMessage(waitMsg.messageID);
+      return api.sendMessage("❌ No download URL found.", threadID);
+    }
 
-      // Build success message
-      const title = data.title || "Video";
-      const uploader = data.uploader || "Unknown";
-      const duration = data.duration || "Unknown";
-      const views = data.view_count ? formatViews(data.view_count) : "Unknown";
-      const platformName = data.download?.platform || platform || "Unknown";
-      const qualityUsed = data.download?.quality || quality;
+    console.log("Download URL:", downloadUrl);
 
-      const messageBody = 
+    // Get file extension
+    const filename = data.download?.filename || "video.mp4";
+    const ext = filename.includes(".mp4") ? "mp4" : 
+                filename.includes(".mp3") ? "mp3" : 
+                filename.includes(".mpg") ? "mpg" : "mp4";
+    
+    const tempPath = path.join(__dirname, `autodl_${Date.now()}.${ext}`);
+
+    // Download the file
+    const fileResponse = await axios({
+      method: 'GET',
+      url: downloadUrl,
+      responseType: 'stream',
+      timeout: 120000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+
+    const writer = fs.createWriteStream(tempPath);
+    fileResponse.data.pipe(writer);
+
+    await new Promise((resolve, reject) => {
+      writer.on('finish', resolve);
+      writer.on('error', reject);
+      fileResponse.data.on('error', reject);
+    });
+
+    // Delete waiting message
+    await api.unsendMessage(waitMsg.messageID);
+
+    // Get file size
+    const stats = fs.statSync(tempPath);
+    const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+
+    // Build success message
+    const title = data.title || "Video";
+    const uploader = data.uploader || "Unknown";
+    const duration = data.duration || "Unknown";
+    const views = data.view_count ? formatViews(data.view_count) : "Unknown";
+    const platformName = data.download?.platform || platform || "Unknown";
+    const qualityUsed = data.download?.quality || quality;
+
+    const messageBody = 
 `✅ 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗦𝘂𝗰𝗰𝗲𝘀𝘀𝗳𝘂𝗹!
 ━━━━━━━━━━━━━━━━━━━━━━━━
 📹 Title: ${title}
@@ -179,50 +211,48 @@ module.exports = {
 ━━━━━━━━━━━━━━━━━━━━━━━━
 🔖 Author: Mueid Mursalin Rifat`;
 
-      // Send video
-      await message.reply({
-        body: messageBody,
-        attachment: fs.createReadStream(tempPath)
-      });
+    // Send video
+    await api.sendMessage({
+      body: messageBody,
+      attachment: fs.createReadStream(tempPath)
+    }, threadID);
 
-      // Clean up
-      setTimeout(() => {
-        if (fs.existsSync(tempPath)) {
-          fs.unlinkSync(tempPath);
-        }
-      }, 10000);
-
-    } catch (error) {
-      console.error("Download error:", error);
-      
-      try {
-        if (waitMsg) await api.unsendMessage(waitMsg.messageID);
-      } catch(e) {}
-      
-      let errorMsg = `❌ 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗙𝗮𝗶𝗹𝗲𝗱\n━━━━━━━━━━━━━━━━━━━━\n`;
-      
-      if (error.code === 'ECONNABORTED') {
-        errorMsg += `⏰ Request timeout.\n💡 The file might be too large.\n`;
-      } else if (error.response?.status === 404) {
-        errorMsg += `🔗 URL not found.\n💡 Check if the video exists.\n`;
-      } else if (error.response?.status === 413) {
-        errorMsg += `📦 File too large.\n💡 Try a lower quality.\n`;
-      } else {
-        errorMsg += `🔧 ${error.message}\n`;
+    // Clean up
+    setTimeout(() => {
+      if (fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
       }
-      
-      errorMsg += `\n━━━━━━━━━━━━━━━━━━━━\n👨‍💻 Mueid Mursalin Rifat`;
-      
-      message.reply(errorMsg);
+    }, 10000);
+
+  } catch (error) {
+    console.error("Download error:", error);
+    
+    try {
+      if (waitMsg) await api.unsendMessage(waitMsg.messageID);
+    } catch(e) {}
+    
+    let errorMsg = `❌ 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗙𝗮𝗶𝗹𝗲𝗱\n━━━━━━━━━━━━━━━━━━━━\n`;
+    
+    if (error.code === 'ECONNABORTED') {
+      errorMsg += `⏰ Request timeout.\n💡 The file might be too large.\n`;
+    } else if (error.response?.status === 404) {
+      errorMsg += `🔗 URL not found.\n💡 Check if the video exists.\n`;
+    } else if (error.response?.status === 413) {
+      errorMsg += `📦 File too large.\n💡 Try a lower quality.\n`;
+    } else {
+      errorMsg += `🔧 ${error.message}\n`;
     }
+    
+    errorMsg += `\n━━━━━━━━━━━━━━━━━━━━\n👨‍💻 Mueid Mursalin Rifat`;
+    
+    api.sendMessage(errorMsg, threadID);
   }
-};
+}
 
 // Extract URLs with comprehensive patterns
 function extractUrls(text) {
   if (!text) return [];
   
-  // Comprehensive URL patterns for all platforms
   const patterns = [
     // YouTube
     /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|v\/|user\/|channel\/|playlist\?list=)|youtu\.be\/)([a-zA-Z0-9_-]{11})(?:\S*)?/gi,
@@ -253,12 +283,10 @@ function extractUrls(text) {
     
     // Reddit
     /(?:https?:\/\/)?(?:www\.)?reddit\.com\/r\/\w+\/comments\/\w+\/[^\/]+\//gi,
-    /(?:https?:\/\/)?(?:www\.)?reddit\.com\/r\/\w+\/comments\/\w+\/[^\/]+\/?(?:\?utm_source=[^&]+&utm_medium=[^&]+&utm_campaign=[^&]+)?/gi,
     /(?:https?:\/\/)?redd\.it\/[a-zA-Z0-9]+/gi,
     
     // Vimeo
     /(?:https?:\/\/)?(?:www\.)?vimeo\.com\/\d+/gi,
-    /(?:https?:\/\/)?(?:www\.)?vimeo\.com\/\d+\/[a-zA-Z0-9_\-]+/gi,
     
     // Dailymotion
     /(?:https?:\/\/)?(?:www\.)?dailymotion\.com\/video\/[a-zA-Z0-9]+/gi,
@@ -274,23 +302,18 @@ function extractUrls(text) {
     
     // LinkedIn
     /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/posts\/[a-zA-Z0-9_-]+/gi,
-    /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/feed\/update\/[a-zA-Z0-9_-]+/gi,
     
     // Snapchat
     /(?:https?:\/\/)?(?:www\.)?snapchat\.com\/add\/[a-zA-Z0-9]+/gi,
-    /(?:https?:\/\/)?(?:www\.)?snapchat\.com\/discover\/[a-zA-Z0-9_-]+/gi,
     
     // Likee
     /(?:https?:\/\/)?(?:www\.)?likee\.video\/[a-zA-Z0-9_-]+/gi,
-    /(?:https?:\/\/)?(?:www\.)?likee\.com\/[a-zA-Z0-9_-]+/gi,
     
     // ShareChat
     /(?:https?:\/\/)?(?:www\.)?sharechat\.com\/[a-zA-Z0-9_-]+/gi,
-    /(?:https?:\/\/)?(?:www\.)?sharechat\.com\/posts\/[a-zA-Z0-9_-]+/gi,
     
     // Telegram
     /(?:https?:\/\/)?t\.me\/[a-zA-Z0-9_]+\/\d+/gi,
-    /(?:https?:\/\/)?telegram\.org\/[a-zA-Z0-9_-]+/gi,
     
     // Discord
     /(?:https?:\/\/)?(?:www\.)?discord\.com\/channels\/\d+\/\d+\/\d+/gi,
@@ -298,27 +321,21 @@ function extractUrls(text) {
     
     // Rumble
     /(?:https?:\/\/)?(?:www\.)?rumble\.com\/v\/[a-zA-Z0-9_-]+/gi,
-    /(?:https?:\/\/)?(?:www\.)?rumble\.com\/embed\/[a-zA-Z0-9_-]+/gi,
     
     // BitChute
     /(?:https?:\/\/)?(?:www\.)?bitchute\.com\/video\/[a-zA-Z0-9_-]+/gi,
-    /(?:https?:\/\/)?(?:www\.)?bitchute\.com\/embed\/[a-zA-Z0-9_-]+/gi,
     
     // Odysee
     /(?:https?:\/\/)?(?:www\.)?odysee\.com\/@[a-zA-Z0-9_.]+\/[a-zA-Z0-9_-]+/gi,
-    /(?:https?:\/\/)?(?:odysee\.com|odysee\.tv)\/[a-zA-Z0-9_-]+/gi,
     
     // LBRY
     /(?:https?:\/\/)?(?:www\.)?lbry\.tv\/@[a-zA-Z0-9_.]+\/[a-zA-Z0-9_-]+/gi,
-    /(?:https?:\/\/)?(?:www\.)?lbry\.tv\/[a-zA-Z0-9_-]+/gi,
     
     // Kick
     /(?:https?:\/\/)?(?:www\.)?kick\.com\/[a-zA-Z0-9]+\/videos\/[a-zA-Z0-9_-]+/gi,
-    /(?:https?:\/\/)?(?:www\.)?kick\.com\/videos\/[a-zA-Z0-9_-]+/gi,
     
     // Trovo
     /(?:https?:\/\/)?(?:www\.)?trovo\.live\/[a-zA-Z0-9_]+\/[a-zA-Z0-9_-]+/gi,
-    /(?:https?:\/\/)?(?:www\.)?trovo\.live\/video\/[a-zA-Z0-9_-]+/gi,
     
     // General URL (fallback)
     /(?:https?:\/\/)[^\s]+/gi
@@ -329,7 +346,6 @@ function extractUrls(text) {
     const matches = text.match(pattern);
     if (matches) {
       for (const match of matches) {
-        // Clean up the URL (remove trailing punctuation)
         const cleanUrl = match.replace(/[.,;:!?]$/, '');
         if (!allMatches.includes(cleanUrl)) {
           allMatches.push(cleanUrl);
@@ -346,7 +362,7 @@ function detectPlatform(url) {
   const urlLower = url.toLowerCase();
   
   const platforms = [
-    { name: "YouTube", patterns: ["youtube.com", "youtu.be", "youtube"] },
+    { name: "YouTube", patterns: ["youtube.com", "youtu.be"] },
     { name: "TikTok", patterns: ["tiktok.com", "vm.tiktok", "vt.tiktok"] },
     { name: "Instagram", patterns: ["instagram.com", "instagr.am"] },
     { name: "Facebook", patterns: ["facebook.com", "fb.watch", "fb.com"] },
