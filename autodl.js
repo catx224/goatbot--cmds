@@ -5,10 +5,10 @@ const path = require("path");
 module.exports = {
   config: {
     name: "autodl",
-    aliases: ["dl", "download"],
+    aliases: ["dl", "download", "saver", "get"],
     version: "1.0",
     author: "Mueid Mursalin Rifat",
-    countDown: 5,
+    countDown: 10,
     role: 0,
     shortDescription: { en: "📥 Download videos" },
     longDescription: { en: "Download videos from YouTube, TikTok, Instagram, Facebook, and 30+ more platforms" },
