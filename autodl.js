@@ -5,7 +5,7 @@ const path = require("path");
 module.exports = {
   config: {
     name: "autodl",
-    aliases: ["dl", "download", "saver", "get"],
+    aliases: ["dl", "download"],
     version: "1.0",
     author: "Mueid Mursalin Rifat",
     countDown: 5,
