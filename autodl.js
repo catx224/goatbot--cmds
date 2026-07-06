@@ -228,7 +228,6 @@ module.exports = {
 `✅ 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱 𝗦𝘂𝗰𝗰𝗲𝘀𝘀𝗳𝘂𝗹!
 ━━━━━━━━━━━━━━━━━━━━━━━━
 📹 Title: ${title.slice(0, 60)}${title.length > 60 ? "..." : ""}
-👤 Uploader: ${uploader}
 ⏱️ Duration: ${duration}
 👁️ Views: ${views}
 📊 Quality: ${qualityUsed}
