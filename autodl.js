@@ -10,75 +10,61 @@ module.exports = {
     author: "Mueid Mursalin Rifat",
     countDown: 10,
     role: 0,
-    shortDescription: { en: "📥 Auto download videos" },
-    longDescription: { en: "Automatically detects and downloads videos from URLs in chat" },
+    shortDescription: { en: "📥 Download videos" },
+    longDescription: { en: "Download videos from YouTube, TikTok, Instagram, Facebook, and 30+ more platforms" },
     category: "media",
     guide: {
-      en: "Just paste a URL in chat!\n\n" +
-           "Supports: YouTube, TikTok, Instagram, Facebook, Twitter/X, Reddit, Vimeo, Dailymotion, Pinterest, Twitch, LinkedIn, Snapchat, Likee, ShareChat, Moj, Roposo, Chingari, Mitron, MxTakaTak, Triller, Kwai, Threads, Telegram, Discord, Rumble, BitChute, Odysee, LBRY, Kick, Trovo"
+      en: "Just type: {pn} <URL>\n\n" +
+           "Or just paste a URL in chat!\n\n" +
+           "📱 Supports: YouTube, TikTok, Instagram, Facebook, Twitter/X, Reddit, Vimeo, Dailymotion, Pinterest, Twitch, LinkedIn, Snapchat, Likee, ShareChat, Moj, Roposo, Chingari, Mitron, MxTakaTak, Triller, Kwai, Threads, Telegram, Discord, Rumble, BitChute, Odysee, LBRY, Kick, Trovo"
     }
   },
 
-  // This function runs when the command is called manually
+  // This runs when user types .autodl
   onStart: async function ({ api, event, args, message }) {
-    // Check if there's a URL in the message
-    const text = args.join(" ") || event.body || "";
-    const urls = extractUrls(text);
+    // Combine all args to get full message
+    const fullMessage = args.join(" ");
+    
+    // Try to find URL in the message
+    let url = null;
+    const urls = extractUrls(fullMessage);
     
     if (urls && urls.length > 0) {
-      const url = urls[0];
-      let quality = "best";
-      
-      // Check if quality is specified
-      const qualityMatch = text.match(/\b(best|720|480|360)\b/i);
-      if (qualityMatch) {
-        quality = qualityMatch[0].toLowerCase();
-      }
-      
-      return processDownload(api, event, message, url, quality);
+      url = urls[0];
     }
     
-    // If no URL, show help
-    return message.reply(
-      `📥 𝗔𝘂𝘁𝗼 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱𝗲𝗿\n━━━━━━━━━━━━━━━━━━━━\n` +
-      `💡 Just paste a video URL in chat!\n\n` +
-      `📱 30+ Platforms Supported\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `👨‍💻 Mueid Mursalin Rifat`
-    );
-  },
-
-  // This function runs for EVERY message (auto-detect)
-  onEvent: async function ({ api, event, message }) {
-    try {
-      // Skip if message is from bot or empty
-      if (event.senderID === api.getCurrentUserID()) return;
-      if (!event.body) return;
-      
-      // Check if message contains a URL
-      const text = event.body;
-      const urls = extractUrls(text);
-      
-      if (urls && urls.length > 0) {
-        const url = urls[0];
-        const platform = detectPlatform(url);
-        
-        // Skip if not a supported platform
-        if (platform === "Unknown") return;
-        
-        // Check if quality is specified in the message
-        let quality = "best";
-        const qualityMatch = text.match(/\b(best|720|480|360)\b/i);
-        if (qualityMatch) {
-          quality = qualityMatch[0].toLowerCase();
-        }
-        
-        // Process the download
-        await processDownload(api, event, message, url, quality);
+    // If no URL found, check if it's a reply
+    if (!url && event.messageReply) {
+      const replyText = event.messageReply.body || "";
+      const replyUrls = extractUrls(replyText);
+      if (replyUrls && replyUrls.length > 0) {
+        url = replyUrls[0];
       }
-    } catch (error) {
-      console.error("Auto-detect error:", error);
     }
+    
+    // If still no URL, show help
+    if (!url) {
+      return message.reply(
+        `📥 𝗔𝘂𝘁𝗼 𝗗𝗼𝘄𝗻𝗹𝗼𝗮𝗱𝗲𝗿\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `📌 Usage: ${this.config.name} <URL>\n\n` +
+        `📍 Examples:\n` +
+        `• ${this.config.name} https://youtube.com/watch?v=...\n` +
+        `• ${this.config.name} https://tiktok.com/@user/video/...\n` +
+        `• Reply to a message with ${this.config.name}\n\n` +
+        `📱 30+ Platforms Supported\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `👨‍💻 Mueid Mursalin Rifat`
+      );
+    }
+
+    // Check quality in message
+    let quality = "best";
+    const qualityMatch = fullMessage.match(/\b(best|720|480|360)\b/i);
+    if (qualityMatch) {
+      quality = qualityMatch[0].toLowerCase();
+    }
+
+    return processDownload(api, event, message, url, quality);
   }
 };
 
@@ -92,9 +78,8 @@ async function processDownload(api, event, message, url, quality) {
     const platform = detectPlatform(url);
     
     // Send processing message
-    waitMsg = await api.sendMessage(
-      `📥 Downloading video...\n📱 Platform: ${platform}\n📊 Quality: ${quality}`,
-      threadID
+    waitMsg = await message.reply(
+      `📥 Downloading video...\n📱 Platform: ${platform}\n📊 Quality: ${quality}`
     );
 
     // Build API URL
@@ -110,9 +95,8 @@ async function processDownload(api, event, message, url, quality) {
 
     if (!data.success) {
       if (waitMsg) await api.unsendMessage(waitMsg.messageID).catch(() => {});
-      return api.sendMessage(
-        `❌ Failed to download from ${platform}.\n💡 Make sure the URL is correct.`,
-        threadID
+      return message.reply(
+        `❌ Failed to download from ${platform}.\n💡 Make sure the URL is correct.`
       );
     }
 
@@ -125,7 +109,7 @@ async function processDownload(api, event, message, url, quality) {
     
     if (!downloadUrl) {
       if (waitMsg) await api.unsendMessage(waitMsg.messageID).catch(() => {});
-      return api.sendMessage("❌ No download URL found.", threadID);
+      return message.reply("❌ No download URL found.");
     }
 
     console.log("Download URL:", downloadUrl);
@@ -187,10 +171,10 @@ async function processDownload(api, event, message, url, quality) {
 🔖 Author: Mueid Mursalin Rifat`;
 
     // Send video
-    await api.sendMessage({
+    await message.reply({
       body: messageBody,
       attachment: fs.createReadStream(tempPath)
-    }, threadID);
+    });
 
     // Clean up
     setTimeout(() => {
@@ -220,11 +204,11 @@ async function processDownload(api, event, message, url, quality) {
     
     errorMsg += `\n━━━━━━━━━━━━━━━━━━━━\n👨‍💻 Mueid Mursalin Rifat`;
     
-    api.sendMessage(errorMsg, threadID);
+    message.reply(errorMsg);
   }
 }
 
-// Extract URLs with comprehensive patterns
+// Extract URLs from text
 function extractUrls(text) {
   if (!text) return [];
   
